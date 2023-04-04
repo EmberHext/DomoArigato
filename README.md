@@ -22,7 +22,7 @@ OPTIONS:
 
 ## Example ##
 ```
-root@kali:~/tools/domo# domo -ao -u targetsite.com
+root@kali:~/tools/domo# domo -abo -u targetsite.com
 
     ________                             _____        .__              __          
     \______ \   ____   _____   ____     /  _  \_______|__| _________ _/  |_  ____  
@@ -32,7 +32,7 @@ root@kali:~/tools/domo# domo -ao -u targetsite.com
             \/             \/                 \/        /_____/     \/             
        	 
     
-[http://targetsite.com/files/ 200 "OK"
+http://targetsite.com/files/ 200 "OK"
 http://targetsite.com/Unixhelp/ 200 "OK"
 http://targetsite.com/icons/ 200 "OK"
 http://targetsite.com/webnews/ 200 "OK"
