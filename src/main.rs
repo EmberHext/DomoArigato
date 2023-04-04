@@ -61,11 +61,11 @@ pub fn check_responses(url: &str, only200: bool) {
         }
     
         if status == StatusCode::OK {
-            println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason());
+            println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the return"));
             let mut count_ok = count_ok.lock().unwrap();
             *count_ok += 1;
         } else if !only200 {
-            println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason());
+            println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the return"));
         }
     });
     
@@ -73,14 +73,14 @@ pub fn check_responses(url: &str, only200: bool) {
     let count_ok = *count_ok.lock().unwrap();
     
     if count_ok != 0 {
-        println!("\n[+] {} links have been analyzed and {} of them are available!!!", count, count_ok);
+        println!("\n[+] {} links have been analyzed and {} of them are available.", count, count_ok);
     } else if only200 {
-        println!("\n\x1b[31m[+] {} links have been analyzed but any of them are available...\x1b[0m", count);
+        println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     } else {
-        println!("\n\x1b[31m[+] {} links have been analyzed but any of them are available...\x1b[0m", count);
+        println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     }
 } 
 
 fn main() {
-
+    check_responses("reddit.com", false);
 }
