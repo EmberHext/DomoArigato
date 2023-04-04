@@ -6,3 +6,5 @@ edition = "2021"
 [dependencies]
 reqwest = { version = "0.11", features = ["blocking"] }
 rayon = "1.7.0"
+clap = "3.0"
+colored = "2.0.0"

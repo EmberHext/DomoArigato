@@ -2,11 +2,12 @@ use std::collections::HashSet;
 use std::io::BufRead;
 use std::process;
 use std::sync::{Arc, Mutex};
-
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::*;
+use clap::{App, Arg};
+use colored::Colorize;
 
 pub fn check_responses(url: &str, only200: bool) {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
@@ -74,13 +75,39 @@ pub fn check_responses(url: &str, only200: bool) {
     
     if count_ok != 0 {
         println!("\n[+] {} links have been analyzed and {} of them are available.", count, count_ok);
-    } else if only200 {
-        println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     } else {
         println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     }
 } 
 
 fn main() {
-    check_responses("www.twitter.com", false);
+    println!("{}", r"    ________                             _____        .__              __          
+    \______ \   ____   _____   ____     /  _  \_______|__| _________ _/  |_  ____  
+     |    |  \ /  _ \ /     \ /  _ \   /  /_\  \_  __ \  |/ ___\__  \\   __\/  _ \ 
+     |    `   (  <_> )  Y Y  (  <_> ) /    |    \  | \/  / /_/  > __ \|  | (  <_> )
+    /_______  /\____/|__|_|  /\____/  \____|__  /__|  |__\___  (____  /__|  \____/ 
+            \/             \/                 \/        /_____/     \/             \n\n".purple());
+    
+    let matches = App::new("Domo Arigato")
+        .version("1.0")
+        .author("Ember Hext (https://github.com/EmberHext)")
+        .about("Performs an audit of the robots.txt Disallow entries on a page")
+        .arg(
+            Arg::with_name("url")
+                .short('u')
+                .long("url")
+                .value_name("URL")
+                .help("URL to check the robots.txt")
+                .required(true)
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("only200")
+                .short('o')
+                .long("only200")
+                .help("Only show results with HTTP status 200"),
+        )
+        .get_matches();
+
+    check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
 }
