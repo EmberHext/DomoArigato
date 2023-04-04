@@ -89,39 +89,52 @@ fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Bo
     let client = Client::new();
 
     let mut count = 0;
-    for p in pathlist {
-        let disurl = format!("http://{}/{}", url, p);
-        let url2 = format!("http://www.bing.com/search?q=site:{}", disurl);
-        println!("{}", url2);
 
-        let resp = match client.get(&url2).send() {
-            Ok(r) => r,
-            Err(_) => continue,
-        };
+    let results: Vec<(String, u16, Option<&'static str>)> = pathlist
+        .par_iter()
+        .filter_map(|p| {
+            let disurl = format!("http://{}/{}", url, p);
+            let url2 = format!("http://www.bing.com/search?q=site:{}", disurl);
+            println!("{}", url2);
 
-        let body = match resp.text() {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
+            let resp = match client.get(&url2).send() {
+                Ok(r) => r,
+                Err(_) => return None,
+            };
 
-        let document = Document::from_read(std::io::Cursor::new(&*body))?;
+            let body = match resp.text() {
+                Ok(t) => t,
+                Err(_) => return None,
+            };
 
-        for cite in document.find(Name("cite")) {
-            let text = cite.text();
-            if text.contains(url) {
-                count += 1;
-                let resp2 = client.get(&text).send();
+            let document = match Document::from_read(std::io::Cursor::new(&*body)) {
+                Ok(d) => d,
+                Err(_) => return None,
+            };
 
-                match resp2 {
-                    Ok(r2) if r2.status().is_success() => {
-                        println!("\x1b[32m - {} {} {}\x1b[0m", text, r2.status().as_u16(), r2.status().canonical_reason().unwrap_or("Unknown"))
-                    }
-                    Ok(r2) if !only200 => {
-                        println!("\x1b[31m - {} {} {}\x1b[0m", text, r2.status().as_u16(), r2.status().canonical_reason().unwrap_or("Unknown"))
-                    }
-                    _ => (),
-                }
-            }
+            Some(
+                document
+                    .find(Name("cite"))
+                    .filter(|cite| cite.text().contains(url))
+                    .filter_map(|cite| {
+                        let text = cite.text();
+                        let resp2 = client.get(&text).send().ok()?;
+                        let status = resp2.status().as_u16();
+                        let reason = resp2.status().canonical_reason();
+                        Some((text, status, reason))
+                    })
+                    .collect::<Vec<(String, u16, Option<&'static str>)>>(),
+            )
+        })
+        .flat_map(|x| x.into_par_iter())
+        .collect();
+
+    for (text, status, reason) in results {
+        count += 1;
+        if status == 200 {
+            println!("\x1b[32m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
+        } else if !only200 {
+            println!("\x1b[31m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
         }
     }
 
