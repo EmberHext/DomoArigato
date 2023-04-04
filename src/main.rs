@@ -125,7 +125,7 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
     pathlist
 } 
 
-fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
+/*fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
     let pathlist = paths.clone();
     println!("\nSearching the Disallow entries on Bing...\n");
 
@@ -187,19 +187,19 @@ fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<
     Ok(())
 }
 
-fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bool)>, Box<dyn Error>> {
+fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<(), Box<dyn Error>> {
     println!("\nSearching the Disallow entries on archive.is...\n");
 
     let client = Client::new();
     let count = Arc::new(Mutex::new(0));
 
-    let results: Vec<(String, bool)> = pathlist
+    let results: Vec<(String, u16, Option<&'static str>)> = pathlist
         .par_iter()
         .map(|p| {
-            let archive_url = format!("https://archive.is/{}/{}", url, p);
+            let search_url = format!("https://archive.is/{}/{}", url, p);
             println!("{}/{}", url, p);
 
-            let resp = match client.get(&archive_url).send() {
+            let resp = match client.get(&search_url).send() {
                 Ok(r) => r,
                 Err(_) => return (p.to_string(), false),
             };
@@ -214,13 +214,19 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
                 Err(_) => return (p.to_string(), false),
             };
 
-            let found = document
-                .find(Name("body"))
-                .filter(|node| {
-                    let text = node.text();
-                    text.contains("List of URLs, ordered from newer to older") && !text.contains("No results")
-                })
-                .count() > 0;
+            Some(
+                document
+                    .find(Name("cite"))
+                    .filter(|cite| cite.text().contains(url))
+                    .filter_map(|cite| {
+                        let text = cite.text();
+                        let resp2 = client.get(&text).send().ok()?;
+                        let status = resp2.status().as_u16();
+                        let reason = resp2.status().canonical_reason();
+                        Some((text, status, reason))
+                    })
+                    .collect::<Vec<(String, u16, Option<&'static str>)>>(),
+            )
 
             if found {
                 let mut count = count.lock().unwrap();
@@ -243,8 +249,8 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
         }
     }
 
-    Ok(results)
-}
+    Ok(())
+}*/
 
 fn main() -> Result<(), Box<dyn Error>> {
     use std::time::Instant;
@@ -296,13 +302,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
     
-    if matches.is_present("searchbing") {
+    /*if matches.is_present("searchbing") {
         search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
     }
 
     if matches.is_present("searcharchive") {
         search_archive_is(matches.value_of("url").unwrap(), pathlist)?;
-    }
+    }*/
 
     let elapsed = now.elapsed();
     println!("Finished in {:.2?}", elapsed);
