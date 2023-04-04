@@ -32,7 +32,7 @@ root@kali:~/tools/domo# domo -ao -u targetsite.com
             \/             \/                 \/        /_____/     \/             
        	 
     
-http://targetsite.com/files/ 200 "OK"
+[http://targetsite.com/files/ 200 "OK"
 http://targetsite.com/Unixhelp/ 200 "OK"
 http://targetsite.com/icons/ 200 "OK"
 http://targetsite.com/webnews/ 200 "OK"
@@ -64,5 +64,44 @@ https://web.archive.org/targetsite.com/%7Echris/omc/ found
 https://web.archive.org/targetsite.com/~chris/omc/ found
 
  -- 16 links have been analyzed and 16 of them are available.
-Finished in 1.52s
+Finished in 1.52s](http://targetsite.com/Unixhelp/ 200 "OK"
+http://targetsite.com/stats/ 200 "OK"
+http://targetsite.com/files/ 200 "OK"
+http://targetsite.com/primer/ 200 "OK"
+http://targetsite.com/icons/ 200 "OK"
+http://targetsite.com/HTML_Dictionary/ 200 "OK"
+http://targetsite.com/staff/ 200 "OK"
+http://targetsite.com/webnews/ 200 "OK"
+
+ -- 16 links have been analyzed and 8 of them are available.
+
+
+Searching the Disallow entries on bing.com...
+
+
+ !! No Disallows have been indexed on bing.com
+
+
+
+Searching the Disallow entries on web.archive.org...
+
+https://web.archive.org/targetsite.com/~chris/directions.html found
+https://web.archive.org/targetsite.com/cgi-bin/ found
+https://web.archive.org/targetsite.com/%7Echris/weird/ found
+https://web.archive.org/targetsite.com/stats/ found
+https://web.archive.org/targetsite.com/%7Echris/directions.html found
+https://web.archive.org/targetsite.com/%7Echris/omc/ found
+https://web.archive.org/targetsite.com/~chris/omc/ found
+https://web.archive.org/targetsite.com/~chris/weird/ found
+https://web.archive.org/targetsite.com/primer/ found
+https://web.archive.org/targetsite.com/HTML_Dictionary/ found
+https://web.archive.org/targetsite.com/Unixhelp/ found
+https://web.archive.org/targetsite.com/counter.html found
+https://web.archive.org/targetsite.com/files/ found
+https://web.archive.org/targetsite.com/staff/ found
+https://web.archive.org/targetsite.com/webnews/ found
+https://web.archive.org/targetsite.com/icons/ found
+
+ -- 16 links have been analyzed and 16 of them are available.
+Finished in 3.64s
 ```
