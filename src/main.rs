@@ -21,7 +21,7 @@
  * THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  *
  * 
- * Note: This is intended to be used for your own servers in contexts like pentesting and CTFs where you are authorised to be engaging with the server in this manner.
+ * Note: This is intended to be used for your own servers or in contexts like pentesting and CTFs where you are authorised to be engaging with the server in this manner.
  * 
  */
 
