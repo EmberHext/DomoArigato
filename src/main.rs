@@ -47,6 +47,7 @@ use clap::{
 use futures::{stream::{self, FuturesUnordered}, StreamExt, TryStreamExt};
 use reqwest::Error as ReqwestError;
 use tokio;
+use tokio::sync::RwLock;
 
 async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
@@ -132,135 +133,11 @@ async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     pathlist_cloned
 } 
 
-/*fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
+async fn search_bing(url: &str, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    println!("\n\nSearching the Disallow entries on bing.com...\n");
     let pathlist = paths.clone();
-    println!("\nSearching the Disallow entries on Bing...\n");
-
-    let client = Client::new();
-    let mut count = 0;
-
-    let results: Vec<(String, u16, Option<&'static str>)> = pathlist
-        .par_iter()
-        .filter_map(|p| {
-            let disurl = format!("http://{}/{}", url, p);
-            let url2 = format!("http://www.bing.com/search?q=site:{}", disurl);
-
-            let resp = match client.get(&url2).send() {
-                Ok(r) => r,
-                Err(_) => return None,
-            };
-
-            let body = match resp.text() {
-                Ok(t) => t,
-                Err(_) => return None,
-            };
-
-            let document = match Document::from_read(std::io::Cursor::new(&*body)) {
-                Ok(d) => d,
-                Err(_) => return None,
-            };
-
-            Some(
-                document
-                    .find(Name("cite"))
-                    .filter(|cite| cite.text().contains(url))
-                    .filter_map(|cite| {
-                        let text = cite.text();
-                        let resp2 = client.get(&text).send().ok()?;
-                        let status = resp2.status().as_u16();
-                        let reason = resp2.status().canonical_reason();
-                        Some((text, status, reason))
-                    })
-                    .collect::<Vec<(String, u16, Option<&'static str>)>>(),
-            )
-        })
-        .flat_map(|x| x.into_par_iter())
-        .collect();
-
-    for (text, status, reason) in results {
-        if status == 200 {
-            count += 1;
-            println!("\x1b[32m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
-        } else if !only200 {
-            println!("\x1b[31m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
-        }
-    }
-
-    if count == 0 {
-        println!("\n\x1b[31m !! No Disallows have been indexed on Bing\x1b[0m");
-    }
-
-    Ok(())
-}
-
-fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<(), Box<dyn Error>> {
-    println!("\nSearching the Disallow entries on archive.is...\n");
-
-    let client = Client::new();
-    let count = Arc::new(Mutex::new(0));
-
-    let results: Vec<(String, u16, Option<&'static str>)> = pathlist
-        .par_iter()
-        .map(|p| {
-            let search_url = format!("https://archive.is/{}/{}", url, p);
-            println!("{}/{}", url, p);
-
-            let resp = match client.get(&search_url).send() {
-                Ok(r) => r,
-                Err(_) => return (p.to_string(), false),
-            };
-
-            let body = match resp.text() {
-                Ok(t) => t,
-                Err(_) => return (p.to_string(), false),
-            };
-
-            let document = match Document::from_read(std::io::Cursor::new(&*body)) {
-                Ok(d) => d,
-                Err(_) => return (p.to_string(), false),
-            };
-
-            Some(
-                document
-                    .find(Name("cite"))
-                    .filter(|cite| cite.text().contains(url))
-                    .filter_map(|cite| {
-                        let text = cite.text();
-                        let resp2 = client.get(&text).send().ok()?;
-                        let status = resp2.status().as_u16();
-                        let reason = resp2.status().canonical_reason();
-                        Some((text, status, reason))
-                    })
-                    .collect::<Vec<(String, u16, Option<&'static str>)>>(),
-            )
-
-            if found {
-                let mut count = count.lock().unwrap();
-                *count += 1;
-            }
-
-            (p.to_string(), found)
-        })
-        .collect();
-    
-    let count = *count.lock().unwrap();
-    
-    if count == 0 {
-            println!("\n\x1b[31m !! No Disallows have been archived on archive.is\x1b[0m\n");
-    } else {
-        for (path, found) in &results {
-            if *found {
-                println!("\x1b[32m - {}/{} found on archive.is\x1b[0m", url, path);
-            }
-        }
-    }
-
-    Ok(())
-}*/
-
-async fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let pathlist = paths.clone();
-    let count = Arc::new(tokio::sync::Mutex::new(0));
+    let count = pathlist.len();
+    let count_ok = Arc::new(tokio::sync::Mutex::new(0));
     let client = Client::new();
 
     let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
@@ -269,7 +146,50 @@ async fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Res
     path_stream
         .map(|path| {
             let client = &client;
-            let count = count.clone();
+            let count_ok = count_ok.clone();
+            let url = url.to_string();
+            async move {
+                let disurl = format!("https://www.bing.com/search?q=site:{}/{}", url, path?);
+                let res = client.get(&disurl).send().await?;
+                let body = res.text().await?;
+
+                if !body.contains("no results") {
+                    println!("\x1b[32m{} found\x1b[0m", disurl);
+                    let mut count_ok = count_ok.lock().await;
+                    *count_ok += 1;
+                }
+                Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
+            }
+        })
+        .buffer_unordered(concurrency_limit)
+        .try_collect::<()>()
+        .await?;
+
+    let count_ok = *count_ok.lock().await;
+
+    if count_ok == 0 {
+        println!("\n\x1b[31m !! No Disallows have been indexed on bing.com\x1b[0m\n");
+    } else {
+        println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
+    }
+
+    Ok(())
+}
+
+async fn search_archive_org(url: &str, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    println!("\n\nSearching the Disallow entries on web.archive.org...\n");
+    let pathlist = paths.clone();
+    let count = pathlist.len();
+    let count_ok = Arc::new(tokio::sync::Mutex::new(0));
+    let client = Client::new();
+
+    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
+    let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
+
+    path_stream
+        .map(|path| {
+            let client = &client;
+            let count_ok = count_ok.clone();
             let url = url.to_string();
             async move {
                 let disurl = format!("https://web.archive.org/{}/{}", url, path?);
@@ -278,8 +198,8 @@ async fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Res
 
                 if body.contains("captures") {
                     println!("\x1b[32m{} found\x1b[0m", disurl);
-                    let mut count = count.lock().await;
-                    *count += 1;
+                    let mut count_ok = count_ok.lock().await;
+                    *count_ok += 1;
                 }
                 Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
             }
@@ -287,6 +207,14 @@ async fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Res
         .buffer_unordered(concurrency_limit)
         .try_collect::<()>()
         .await?;
+
+    let count_ok = *count_ok.lock().await;
+
+    if count_ok == 0 {
+        println!("\n\x1b[31m !! No Disallows have been archived on web.archive.org\x1b[0m\n");
+    } else {
+        println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
+    }
 
     Ok(())
 }
@@ -340,15 +268,30 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .get_matches();
 
-    let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
-    
-    /*if matches.is_present("searchbing") {
-        search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
-    }*/
 
-    if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist.await).await {
-        eprintln!("Error: {}", e);
-    }
+        let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200")).await;
+        let shared_pathlist = Arc::new(RwLock::new(pathlist));
+    
+        if matches.is_present("searchbing") {
+            let pathlist = {
+                let pathlist = shared_pathlist.clone();
+                let pathlist = pathlist.read().await;
+                pathlist.clone()
+            };
+            if let Err(e) = search_bing(matches.value_of("url").unwrap(), pathlist).await {
+                eprintln!("Error: {}", e);
+            }
+        }
+        if matches.is_present("searcharchive") {
+            let pathlist = {
+                let pathlist = shared_pathlist.clone();
+                let pathlist = pathlist.read().await;
+                pathlist.clone()
+            };
+            if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), pathlist).await {
+                eprintln!("Error: {}", e);
+            }
+        }
 
     let elapsed = now.elapsed();
     println!("Finished in {:.2?}", elapsed);
