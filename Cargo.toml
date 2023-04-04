@@ -8,7 +8,4 @@ chrono = "0.4"
 reqwest = { version = "0.11", features = ["json"] }
 futures = "0.3"
 tokio = { version = "1", features = ["full"] }
-rayon = "1.7.0"
 clap = "3.0"
-colored = "2.0.0"
-select = "0.5"
