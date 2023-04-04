@@ -172,8 +172,8 @@ fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<
         .collect();
 
     for (text, status, reason) in results {
-        count += 1;
         if status == 200 {
+            count += 1;
             println!("\x1b[32m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
         } else if !only200 {
             println!("\x1b[31m - {} {} {}\x1b[0m", text, status, reason.unwrap_or("Unknown"));
@@ -181,14 +181,14 @@ fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<
     }
 
     if count == 0 {
-        println!("\n\x1b[31m !! No Disallows have been indexed in Bing\x1b[0m");
+        println!("\n\x1b[31m !! No Disallows have been indexed on Bing\x1b[0m");
     }
 
     Ok(())
 }
 
 fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bool)>, Box<dyn Error>> {
-    println!("\nSearching the Disallow entries in archive.is...\n");
+    println!("\nSearching the Disallow entries on archive.is...\n");
 
     let client = Client::new();
     let count = Arc::new(Mutex::new(0));
@@ -197,6 +197,7 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
         .par_iter()
         .map(|p| {
             let archive_url = format!("https://archive.is/{}/{}", url, p);
+            println!("{}/{}", url, p);
 
             let resp = match client.get(&archive_url).send() {
                 Ok(r) => r,
@@ -208,7 +209,10 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
                 Err(_) => return (p.to_string(), false),
             };
 
-            let document = Document::from(&*body);
+            let document = match Document::from_read(std::io::Cursor::new(&*body)) {
+                Ok(d) => d,
+                Err(_) => return (p.to_string(), false),
+            };
 
             let found = document
                 .find(Name("body"))
@@ -230,7 +234,7 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
     let count = *count.lock().unwrap();
     
     if count == 0 {
-            println!("\n\x1b[31m !! No Disallows have been archived on archive.is\x1b[0m");
+            println!("\n\x1b[31m !! No Disallows have been archived on archive.is\x1b[0m\n");
     } else {
         for (path, found) in &results {
             if *found {
@@ -291,12 +295,17 @@ fn main() -> Result<(), Box<dyn Error>> {
         .get_matches();
 
     let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
+    
+    if matches.is_present("searchbing") {
+        search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
+    }
 
-    search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
-    search_archive_is(matches.value_of("url").unwrap(), pathlist)?;
+    if matches.is_present("searcharchive") {
+        search_archive_is(matches.value_of("url").unwrap(), pathlist)?;
+    }
 
     let elapsed = now.elapsed();
-    println!("Elapsed: {:.2?}", elapsed);
+    println!("Finished in {:.2?}", elapsed);
 
     Ok(())
 }
