@@ -1,14 +1,28 @@
-use std::collections::HashSet;
-use std::process;
-use std::sync::{Arc, Mutex};
-use std::error::Error;
-use reqwest::blocking::Client;
-use reqwest::StatusCode;
-use select::{document::Document, predicate::Name};
-use rayon::iter::IntoParallelRefIterator;
-use rayon::prelude::*;
-use clap::{App, Arg};
-use colored::Colorize;
+use std::{
+    collections::HashSet,
+    process,
+    sync::{
+        Arc,
+        Mutex
+    },
+    error::Error,
+};
+use reqwest::{
+    blocking::Client,
+    StatusCode,
+};
+use select::{
+    document::Document, 
+    predicate::Name
+};
+use rayon::{
+    iter::IntoParallelRefIterator,
+    prelude::*,
+};
+use clap::{
+    App, 
+    Arg,
+};
 
 fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
@@ -84,7 +98,7 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
 } 
 
 fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Box<dyn Error>> {
-    println!("\nSearching the Disallows entries in Bing...\n");
+    println!("\nSearching the Disallow entries in Bing...\n");
 
     let client = Client::new();
 
@@ -95,7 +109,6 @@ fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Bo
         .filter_map(|p| {
             let disurl = format!("http://{}/{}", url, p);
             let url2 = format!("http://www.bing.com/search?q=site:{}", disurl);
-            println!("{}", url2);
 
             let resp = match client.get(&url2).send() {
                 Ok(r) => r,
@@ -146,7 +159,11 @@ fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Bo
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    use std::time::Instant;
+    let now = Instant::now();
+
     println!("{}", r"
+    
     ________                             _____        .__              __          
     \______ \   ____   _____   ____     /  _  \_______|__| _________ _/  |_  ____  
      |    |  \ /  _ \ /     \ /  _ \   /  /_\  \_  __ \  |/ ___\__  \\   __\/  _ \ 
@@ -154,7 +171,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     /_______  /\____/|__|_|  /\____/  \____|__  /__|  |__\___  (____  /__|  \____/ 
             \/             \/                 \/        /_____/     \/             
             
-            ".purple());
+    ");
     
     let matches = App::new("Domo Arigato")
         .version("1.0")
@@ -186,6 +203,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
 
     search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist)?;
+
+    let elapsed = now.elapsed();
+    println!("Elapsed: {:.2?}", elapsed);
 
     Ok(())
 }
