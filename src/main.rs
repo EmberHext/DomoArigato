@@ -39,15 +39,24 @@ use reqwest::{
     self,
     StatusCode,
     Client,
+    Error as ReqwestError,
 };
 use clap::{
     App, 
     Arg,
 };
-use futures::{stream::{self, FuturesUnordered}, StreamExt, TryStreamExt};
-use reqwest::Error as ReqwestError;
-use tokio;
-use tokio::sync::RwLock;
+use futures::{
+    stream::{
+        self, 
+        FuturesUnordered
+    }, 
+    StreamExt, 
+    TryStreamExt
+};
+use tokio::{
+    self,
+    sync::RwLock,
+};
 
 async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
