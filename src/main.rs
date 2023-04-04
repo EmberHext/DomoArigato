@@ -36,7 +36,10 @@ use std::{
     error::Error,
 };
 use reqwest::{
-    blocking::Client,
+    blocking::{
+        self,
+        Client,
+    },
     StatusCode,
 };
 use select::{
@@ -130,7 +133,6 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
     println!("\nSearching the Disallow entries on Bing...\n");
 
     let client = Client::new();
-
     let mut count = 0;
 
     let results: Vec<(String, u16, Option<&'static str>)> = pathlist
@@ -252,7 +254,30 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<(), Box<dyn Err
     Ok(())
 }*/
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+    println!("\nSearching the Disallow entries on web.archive.org...\n");
+    let pathlist = paths.clone();
+    let count = Arc::new(Mutex::new(0));
+    pathlist
+        .par_iter()
+        .try_for_each(|page| -> Result<(), Box<dyn Error + Send + Sync>> {
+            let disurl = format!("https://web.archive.org/{}/{}", url, page);
+            let res = blocking::get(disurl.clone())?;
+            let body = res.text()?;
+
+            if body.contains("captures") {
+                println!("\x1b[32m{} found\x1b[0m", disurl);
+                let mut count = count.lock().unwrap();
+                *count += 1;
+            }
+            
+            Ok(())
+        })?;
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     use std::time::Instant;
     let now = Instant::now();
 
@@ -296,7 +321,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             Arg::with_name("searcharchive")
             .short('a')
             .long("archive")
-            .help("Search the URLs on archive.is and return the results")
+            .help("Search the URLs on archive.org and return the results")
         )
         .get_matches();
 
@@ -304,11 +329,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     
     /*if matches.is_present("searchbing") {
         search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
-    }
+    }*/
 
     if matches.is_present("searcharchive") {
-        search_archive_is(matches.value_of("url").unwrap(), pathlist)?;
-    }*/
+        search_archive_org(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist)?;
+    }
 
     let elapsed = now.elapsed();
     println!("Finished in {:.2?}", elapsed);
