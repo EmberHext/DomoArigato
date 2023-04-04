@@ -57,6 +57,7 @@ use tokio::{
     self,
     sync::RwLock,
 };
+use chrono::Local;
 
 async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
@@ -277,6 +278,11 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .get_matches();
 
+
+        println!("Running Domo v1");
+        let time_now = Local::now();
+        let formatted_datetime = time_now.format("%Y-%m-%d %H:%M:%S");
+        println!("Running @ {}, starting: {}\n\n", matches.value_of("url").unwrap(), formatted_datetime);
 
         let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200")).await;
         let shared_pathlist = Arc::new(RwLock::new(pathlist));
