@@ -59,7 +59,7 @@ use tokio::{
 };
 use chrono::Local;
 
-async fn check_responses(url: &str, only200: bool) -> Vec<String> {
+async fn check_responses(url: &str, only200: bool, client: &Client) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
@@ -92,8 +92,7 @@ async fn check_responses(url: &str, only200: bool) -> Vec<String> {
         }
     });
 
-    let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
-    let client = Arc::new(client);
+    let client = Arc::new(client.clone());
 
     let count = Arc::new(Mutex::new(0));
     let count_ok = Arc::new(Mutex::new(0));
@@ -143,12 +142,12 @@ async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     pathlist_cloned
 } 
 
-async fn search_bing(url: &str, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_bing(url: &str, paths: Vec<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("\n\nSearching the Disallow entries on bing.com...\n");
     let pathlist = paths.clone();
     let count = pathlist.len();
     let count_ok = Arc::new(tokio::sync::Mutex::new(0));
-    let client = Client::new();
+    let client = client.clone();
 
     let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
     let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
@@ -186,12 +185,12 @@ async fn search_bing(url: &str, paths: Vec<String>) -> Result<(), Box<dyn Error 
     Ok(())
 }
 
-async fn search_archive_org(url: &str, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_archive_org(url: &str, paths: Vec<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("\n\nSearching the Disallow entries on web.archive.org...\n");
     let pathlist = paths.clone();
     let count = pathlist.len();
     let count_ok = Arc::new(tokio::sync::Mutex::new(0));
-    let client = Client::new();
+    let client = client.clone();
 
     let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
     let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
@@ -202,7 +201,7 @@ async fn search_archive_org(url: &str, paths: Vec<String>) -> Result<(), Box<dyn
             let count_ok = count_ok.clone();
             let url = url.to_string();
             async move {
-                let disurl = format!("https://web.archive.org/{}/{}", url, path?);
+                let disurl = format!("https://web.archive.org/web/*/{}/{}", url, path?);
                 let res = client.get(&disurl).send().await?;
                 let body = res.text().await?;
 
@@ -284,7 +283,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let formatted_datetime = time_now.format("%Y-%m-%d %H:%M:%S");
         println!("Running @ {}, starting: {}\n\n", matches.value_of("url").unwrap(), formatted_datetime);
 
-        let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200")).await;
+        let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
+
+        let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"), &client).await;
         let shared_pathlist = Arc::new(RwLock::new(pathlist));
     
         if matches.is_present("searchbing") {
@@ -293,7 +294,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 let pathlist = pathlist.read().await;
                 pathlist.clone()
             };
-            if let Err(e) = search_bing(matches.value_of("url").unwrap(), pathlist).await {
+            if let Err(e) = search_bing(matches.value_of("url").unwrap(), pathlist, &client).await {
                 eprintln!("Error: {}", e);
             }
         }
@@ -303,7 +304,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 let pathlist = pathlist.read().await;
                 pathlist.clone()
             };
-            if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), pathlist).await {
+            if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), pathlist, &client).await {
                 eprintln!("Error: {}", e);
             }
         }
