@@ -1,15 +1,16 @@
 use std::collections::HashSet;
-use std::io::BufRead;
 use std::process;
 use std::sync::{Arc, Mutex};
+use std::error::Error;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
+use select::{document::Document, predicate::Name};
 use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::*;
 use clap::{App, Arg};
 use colored::Colorize;
 
-pub fn check_responses(url: &str, only200: bool) {
+fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
@@ -78,15 +79,69 @@ pub fn check_responses(url: &str, only200: bool) {
     } else {
         println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     }
+
+    pathlist.clone()
 } 
 
-fn main() {
-    println!("{}", r"    ________                             _____        .__              __          
+fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Box<dyn Error>> {
+    println!("\nSearching the Disallows entries in Bing...\n");
+
+    let client = Client::new();
+
+    let mut count = 0;
+    for p in pathlist {
+        let disurl = format!("http://{}/{}", url, p);
+        let url2 = format!("http://www.bing.com/search?q=site:{}", disurl);
+        println!("{}", url2);
+
+        let resp = match client.get(&url2).send() {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        let body = match resp.text() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+
+        let document = Document::from_read(std::io::Cursor::new(&*body))?;
+
+        for cite in document.find(Name("cite")) {
+            let text = cite.text();
+            if text.contains(url) {
+                count += 1;
+                let resp2 = client.get(&text).send();
+
+                match resp2 {
+                    Ok(r2) if r2.status().is_success() => {
+                        println!("\x1b[32m - {} {} {}\x1b[0m", text, r2.status().as_u16(), r2.status().canonical_reason().unwrap_or("Unknown"))
+                    }
+                    Ok(r2) if !only200 => {
+                        println!("\x1b[31m - {} {} {}\x1b[0m", text, r2.status().as_u16(), r2.status().canonical_reason().unwrap_or("Unknown"))
+                    }
+                    _ => (),
+                }
+            }
+        }
+    }
+
+    if count == 0 {
+        println!("\n\x1b[31m[+] No Disallows have been indexed in Bing\x1b[0m");
+    }
+
+    Ok(())
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    println!("{}", r"
+    ________                             _____        .__              __          
     \______ \   ____   _____   ____     /  _  \_______|__| _________ _/  |_  ____  
      |    |  \ /  _ \ /     \ /  _ \   /  /_\  \_  __ \  |/ ___\__  \\   __\/  _ \ 
      |    `   (  <_> )  Y Y  (  <_> ) /    |    \  | \/  / /_/  > __ \|  | (  <_> )
     /_______  /\____/|__|_|  /\____/  \____|__  /__|  |__\___  (____  /__|  \____/ 
-            \/             \/                 \/        /_____/     \/             \n\n".purple());
+            \/             \/                 \/        /_____/     \/             
+            
+            ".purple());
     
     let matches = App::new("Domo Arigato")
         .version("1.0")
@@ -107,7 +162,17 @@ fn main() {
                 .long("only200")
                 .help("Only show results with HTTP status 200"),
         )
+        .arg(
+            Arg::with_name("searchbing")
+            .short('b')
+            .long("bing")
+            .help("Search the URLs on Bing and return the results")
+        )
         .get_matches();
 
-    check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
+    let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
+
+    search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist)?;
+
+    Ok(())
 }
