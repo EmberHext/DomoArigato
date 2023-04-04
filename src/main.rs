@@ -13,7 +13,7 @@ use reqwest::{
 };
 use select::{
     document::Document, 
-    predicate::Name
+    predicate::Name,
 };
 use rayon::{
     iter::IntoParallelRefIterator,
@@ -94,10 +94,11 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
         println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
     }
 
-    pathlist.clone()
+    pathlist
 } 
 
-fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Box<dyn Error>> {
+fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
+    let pathlist = paths.clone();
     println!("\nSearching the Disallow entries in Bing...\n");
 
     let client = Client::new();
@@ -158,12 +159,67 @@ fn search_bing(url: &str, only200: bool, pathlist: Vec<String>) -> Result<(), Bo
     Ok(())
 }
 
+fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bool)>, Box<dyn Error>> {
+    println!("\nSearching the Disallows entries in archive.is...\n");
+
+    let client = Client::new();
+    let count = Arc::new(Mutex::new(0));
+
+    let results: Vec<(String, bool)> = pathlist
+        .par_iter()
+        .map(|p| {
+            let archive_url = format!("https://archive.is/{}/{}", url, p);
+
+            let resp = match client.get(&archive_url).send() {
+                Ok(r) => r,
+                Err(_) => return (p.to_string(), false),
+            };
+
+            let body = match resp.text() {
+                Ok(t) => t,
+                Err(_) => return (p.to_string(), false),
+            };
+
+            let document = Document::from(&*body);
+
+            let found = document
+                .find(Name("body"))
+                .filter(|node| {
+                    let text = node.text();
+                    text.contains("List of URLs, ordered from newer to older") && !text.contains("No results")
+                })
+                .count() > 0;
+
+            if found {
+                let mut count = count.lock().unwrap();
+                *count += 1;
+            }
+
+            (p.to_string(), found)
+        })
+        .collect();
+    
+    let count = *count.lock().unwrap();
+    
+    if count == 0 {
+            println!("\n\x1b[31m[+] No Disallows have been archived on archive.is\x1b[0m");
+    } else {
+        for (path, found) in &results {
+            if *found {
+                println!("\x1b[32m - {}/{} found in archive.is\x1b[0m", url, path);
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     use std::time::Instant;
     let now = Instant::now();
 
     println!("{}", r"
-    
+
     ________                             _____        .__              __          
     \______ \   ____   _____   ____     /  _  \_______|__| _________ _/  |_  ____  
      |    |  \ /  _ \ /     \ /  _ \   /  /_\  \_  __ \  |/ ___\__  \\   __\/  _ \ 
@@ -198,11 +254,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             .long("bing")
             .help("Search the URLs on Bing and return the results")
         )
+        .arg(
+            Arg::with_name("searcharchive")
+            .short('a')
+            .long("archive")
+            .help("Search the URLs on archive.is and return the results")
+        )
         .get_matches();
 
     let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"));
 
-    search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist)?;
+    search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
+    search_archive_is(matches.value_of("url").unwrap(), pathlist)?;
 
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
