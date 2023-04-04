@@ -41,6 +41,7 @@ use reqwest::{
         Client,
     },
     StatusCode,
+    Client,
 };
 use select::{
     document::Document, 
@@ -54,6 +55,9 @@ use clap::{
     App, 
     Arg,
 };
+use futures::{stream, StreamExt, TryStreamExt};
+use std::sync::Arc;
+use std::error::Error;
 
 fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
@@ -254,25 +258,35 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<(), Box<dyn Err
     Ok(())
 }*/
 
-fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
-    println!("\nSearching the Disallow entries on web.archive.org...\n");
+async fn search_archive_is(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let pathlist = paths.clone();
-    let count = Arc::new(Mutex::new(0));
-    pathlist
-        .par_iter()
-        .try_for_each(|page| -> Result<(), Box<dyn Error + Send + Sync>> {
-            let disurl = format!("https://web.archive.org/{}/{}", url, page);
-            let res = blocking::get(disurl.clone())?;
-            let body = res.text()?;
+    let count = Arc::new(tokio::sync::Mutex::new(0));
+    let client = Client::new();
 
-            if body.contains("captures") {
-                println!("\x1b[32m{} found\x1b[0m", disurl);
-                let mut count = count.lock().unwrap();
-                *count += 1;
+    let path_stream = stream::iter(pathlist.into_iter().map(Ok));
+    let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
+
+    path_stream
+        .map(|path| {
+            let client = &client;
+            let count = count.clone();
+            let url = url.to_string();
+            async move {
+                let disurl = format!("https://archive.is/{}/{}", url, path?);
+                let res = client.get(&disurl).send().await?;
+                let body = res.text().await?;
+
+                if body.contains("List of URLs") {
+                    println!("\x1b[32m{} found\x1b[0m", disurl);
+                    let mut count = count.lock().await;
+                    *count += 1;
+                }
+                Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
             }
-            
-            Ok(())
-        })?;
+        })
+        .buffer_unordered(concurrency_limit)
+        .try_collect::<()>()
+        .await?;
 
     Ok(())
 }
