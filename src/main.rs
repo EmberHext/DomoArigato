@@ -117,9 +117,9 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let count_ok = *count_ok.lock().unwrap();
     
     if count_ok != 0 {
-        println!("\n[+] {} links have been analyzed and {} of them are available.", count, count_ok);
+        println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
     } else {
-        println!("\n\x1b[31m[+] {} links have been analyzed, none are available.\x1b[0m", count);
+        println!("\n\x1b[31m !! {} links have been analyzed, none are available.\x1b[0m", count);
     }
 
     pathlist
@@ -127,7 +127,7 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
 
 fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
     let pathlist = paths.clone();
-    println!("\nSearching the Disallow entries in Bing...\n");
+    println!("\nSearching the Disallow entries on Bing...\n");
 
     let client = Client::new();
 
@@ -181,14 +181,14 @@ fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<
     }
 
     if count == 0 {
-        println!("\n\x1b[31m[+] No Disallows have been indexed in Bing\x1b[0m");
+        println!("\n\x1b[31m !! No Disallows have been indexed in Bing\x1b[0m");
     }
 
     Ok(())
 }
 
 fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bool)>, Box<dyn Error>> {
-    println!("\nSearching the Disallows entries in archive.is...\n");
+    println!("\nSearching the Disallow entries in archive.is...\n");
 
     let client = Client::new();
     let count = Arc::new(Mutex::new(0));
@@ -230,11 +230,11 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<Vec<(String, bo
     let count = *count.lock().unwrap();
     
     if count == 0 {
-            println!("\n\x1b[31m[+] No Disallows have been archived on archive.is\x1b[0m");
+            println!("\n\x1b[31m !! No Disallows have been archived on archive.is\x1b[0m");
     } else {
         for (path, found) in &results {
             if *found {
-                println!("\x1b[32m - {}/{} found in archive.is\x1b[0m", url, path);
+                println!("\x1b[32m - {}/{} found on archive.is\x1b[0m", url, path);
             }
         }
     }
