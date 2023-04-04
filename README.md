@@ -79,4 +79,4 @@ Finished in 3.54s
 
 ## Disclaimer ##
 
-This is intended to be used for your own servers or in contexts like pentesting and CTFs where you are authorised to be engaging with the server in this manner.
+This is intended to be used for your own servers or in contexts like pentesting and CTFs where you are authorised to be engaging with the server in this manner. If you choose to do anything else with it, that's your responsibility.
