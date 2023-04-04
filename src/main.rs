@@ -36,35 +36,24 @@ use std::{
     error::Error,
 };
 use reqwest::{
-    blocking::{
-        self,
-        Client,
-    },
+    self,
     StatusCode,
     Client,
-};
-use select::{
-    document::Document, 
-    predicate::Name,
-};
-use rayon::{
-    iter::IntoParallelRefIterator,
-    prelude::*,
 };
 use clap::{
     App, 
     Arg,
 };
-use futures::{stream, StreamExt, TryStreamExt};
-use std::sync::Arc;
-use std::error::Error;
+use futures::{stream::{self, FuturesUnordered}, StreamExt, TryStreamExt};
+use reqwest::Error as ReqwestError;
+use tokio;
 
-fn check_responses(url: &str, only200: bool) -> Vec<String> {
+async fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
-    let text = match reqwest::blocking::get(&robots_txt_url) {
-        Ok(response) => response.text().unwrap(),
+    let text = match reqwest::get(&robots_txt_url).await {
+        Ok(response) => response.text().await.unwrap(),
         Err(error) => {
             match error.status() {
                 Some(StatusCode::NOT_FOUND) => {
@@ -80,7 +69,7 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
     };
     let lines = text.lines().collect::<Vec<_>>();
 
-    lines.par_iter().for_each(|line| {
+    lines.iter().for_each(|line| {
         let line_str = line.to_string();
         let path: Vec<&str> = line_str.splitn(2, ": /").collect();
         if let Some(p) = path.get(1) {
@@ -98,27 +87,38 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
     let count = Arc::new(Mutex::new(0));
     let count_ok = Arc::new(Mutex::new(0));
 
-    let pathlist = Arc::clone(&pathlist);
-    let pathlist = pathlist.lock().unwrap().iter().cloned().collect::<Vec<String>>();
-    pathlist.par_iter().for_each(|p| {
-        let disurl = format!("http://{}/{}", url, p);
-        let client = Arc::clone(&client);
-        let res = client.get(&disurl).send().unwrap();
-        let status = res.status();
-    
-        {
-            let mut count = count.lock().unwrap();
-            *count += 1;
-        }
-    
-        if status == StatusCode::OK {
-            println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
-            let mut count_ok = count_ok.lock().unwrap();
-            *count_ok += 1;
-        } else if !only200 {
-            println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
-        }
-    });
+    let pathlist_locked = pathlist.lock().unwrap();
+    let pathlist_cloned: Vec<String> = pathlist_locked.iter().cloned().collect();
+
+    let mut futures = pathlist_cloned
+        .iter()
+        .map(|p| {
+            let disurl = format!("http://{}/{}", url, p);
+            let client = Arc::clone(&client);
+            let count = Arc::clone(&count);
+            let count_ok = Arc::clone(&count_ok);
+
+            async move {
+                let res = client.get(&disurl).send().await.unwrap();
+                let status = res.status();
+
+                {
+                    let mut count = count.lock().unwrap();
+                    *count += 1;
+                }
+
+                if status == StatusCode::OK {
+                    println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
+                    let mut count_ok = count_ok.lock().unwrap();
+                    *count_ok += 1;
+                } else if !only200 {
+                    println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
+                }
+            }
+        })
+        .collect::<FuturesUnordered<_>>();
+
+    while let Some(_) = futures.next().await {}
     
     let count = *count.lock().unwrap();
     let count_ok = *count_ok.lock().unwrap();
@@ -129,7 +129,7 @@ fn check_responses(url: &str, only200: bool) -> Vec<String> {
         println!("\n\x1b[31m !! {} links have been analyzed, none are available.\x1b[0m", count);
     }
 
-    pathlist
+    pathlist_cloned
 } 
 
 /*fn search_bing(url: &str, only200: bool, paths: &Vec<String>) -> Result<(), Box<dyn Error>> {
@@ -258,12 +258,12 @@ fn search_archive_is(url: &str, pathlist: Vec<String>) -> Result<(), Box<dyn Err
     Ok(())
 }*/
 
-async fn search_archive_is(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_archive_org(url: &str, only200: bool, paths: Vec<String>) -> Result<(), Box<dyn Error + Send + Sync>> {
     let pathlist = paths.clone();
     let count = Arc::new(tokio::sync::Mutex::new(0));
     let client = Client::new();
 
-    let path_stream = stream::iter(pathlist.into_iter().map(Ok));
+    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
     let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
 
     path_stream
@@ -272,11 +272,11 @@ async fn search_archive_is(url: &str, only200: bool, paths: Vec<String>) -> Resu
             let count = count.clone();
             let url = url.to_string();
             async move {
-                let disurl = format!("https://archive.is/{}/{}", url, path?);
+                let disurl = format!("https://web.archive.org/{}/{}", url, path?);
                 let res = client.get(&disurl).send().await?;
                 let body = res.text().await?;
 
-                if body.contains("List of URLs") {
+                if body.contains("captures") {
                     println!("\x1b[32m{} found\x1b[0m", disurl);
                     let mut count = count.lock().await;
                     *count += 1;
@@ -291,7 +291,8 @@ async fn search_archive_is(url: &str, only200: bool, paths: Vec<String>) -> Resu
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     use std::time::Instant;
     let now = Instant::now();
 
@@ -345,8 +346,8 @@ fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         search_bing(matches.value_of("url").unwrap(), matches.is_present("only200"), &pathlist)?;
     }*/
 
-    if matches.is_present("searcharchive") {
-        search_archive_org(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist)?;
+    if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), matches.is_present("only200"), pathlist.await).await {
+        eprintln!("Error: {}", e);
     }
 
     let elapsed = now.elapsed();
