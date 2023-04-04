@@ -21,7 +21,7 @@ pub fn check_responses(url: &str, only200: bool) {
                 }
                 _ => {
                     eprintln!("\x1b[31mPlease, type a valid URL. This URL can't be resolved.\x1b[0m");
-                    eprintln!("\x1b[31me.g: parsero -u www.behindthefirewalls.com -o -sb\x1b[0m\n");
+                    eprintln!("\x1b[31me.g: domo -u www.example.com -o -sb\x1b[0m\n");
                 }
             }
             process::exit(1);
@@ -61,11 +61,11 @@ pub fn check_responses(url: &str, only200: bool) {
         }
     
         if status == StatusCode::OK {
-            println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the return"));
+            println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
             let mut count_ok = count_ok.lock().unwrap();
             *count_ok += 1;
         } else if !only200 {
-            println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the return"));
+            println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
         }
     });
     
@@ -82,5 +82,5 @@ pub fn check_responses(url: &str, only200: bool) {
 } 
 
 fn main() {
-    check_responses("reddit.com", false);
+    check_responses("www.twitter.com", false);
 }
