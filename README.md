@@ -30,6 +30,9 @@ root@kali:~/tools/domo# domo -abo -u targetsite.com
      |    `   (  <_> )  Y Y  (  <_> ) /    |    \  | \/  / /_/  > __ \|  | (  <_> )
     /_______  /\____/|__|_|  /\____/  \____|__  /__|  |__\___  (____  /__|  \____/ 
             \/             \/                 \/        /_____/     \/             
+            
+Running Domo v1
+Running @ targetsite.com, starting: 2023-04-04 17:34:58
        	 
 http://targetsite.com/files/ 200 "OK"
 http://targetsite.com/stats/ 200 "OK"
@@ -73,3 +76,7 @@ https://web.archive.org/targetsite.com/icons/ found
 Finished in 3.54s
 
 ```
+
+## Disclaimer ##
+
+This is intended to be used for your own servers or in contexts like pentesting and CTFs where you are authorised to be engaging with the server in this manner.
