@@ -61,8 +61,6 @@ async fn check_responses(url: &str, only200: bool, client: Arc<Client>) -> Resul
         if let Some(p) = path.get(1) {
             if line_str.starts_with("Disallow") {
                 let sanitized_path = p.trim_start_matches('/').trim_end_matches('\r').to_string();
-
-                // Check if the path contains a wildcard pattern
                 if sanitized_path.contains('*') {
                     let pattern = sanitized_path.replace("*", ".*");
                     let re = match Regex::new(&pattern) {
@@ -74,7 +72,6 @@ async fn check_responses(url: &str, only200: bool, client: Arc<Client>) -> Resul
                     };
 
                     let mut pathlist = pathlist.write().await;
-                    // Filter the paths based on the regex
                     for p in re.find_iter(url) {
                         pathlist.insert(p.as_str().to_string());
                     }
