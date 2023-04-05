@@ -73,7 +73,7 @@ https://web.archive.org/web/*/targetsite.com/Unixhelp/ found
 https://web.archive.org/web/*/targetsite.com/icons/ found
 
  -- 16 links have been analyzed and 16 of them are available.
-Finished in 3.54s
+Finished in 1.31s
 
 ```
 
