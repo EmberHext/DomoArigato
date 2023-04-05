@@ -32,6 +32,7 @@ use clap::{App, Arg};
 use futures::{stream, StreamExt, TryStreamExt};
 use tokio::{self, sync::RwLock};
 use chrono::Local;
+use regex::Regex;
 
 async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<HashSet<String>, Box<dyn Error + Send + Sync>> {
     let pathlist = Arc::new(RwLock::new(HashSet::new()));
@@ -60,8 +61,27 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
         if let Some(p) = path.get(1) {
             if line_str.starts_with("Disallow") {
                 let sanitized_path = p.trim_start_matches('/').trim_end_matches('\r').to_string();
-                let mut pathlist = pathlist.write().await;
-                pathlist.insert(sanitized_path);
+
+                // Check if the path contains a wildcard pattern
+                if sanitized_path.contains('*') {
+                    let pattern = sanitized_path.replace("*", ".*");
+                    let re = match Regex::new(&pattern) {
+                        Ok(regex) => regex,
+                        Err(e) => {
+                            eprintln!("Error compiling regex for pattern {}: {}", pattern, e);
+                            continue;
+                        }
+                    };
+
+                    let mut pathlist = pathlist.write().await;
+                    // Filter the paths based on the regex
+                    for p in re.find_iter(url) {
+                        pathlist.insert(p.as_str().to_string());
+                    }
+                } else {
+                    let mut pathlist = pathlist.write().await;
+                    pathlist.insert(sanitized_path);
+                }
             }
         }
     }
@@ -141,7 +161,7 @@ async fn search_engine(url: &str, paths: HashSet<String>, client: &Client, engin
             let count_ok = count_ok.clone();
             let url = url.to_string();
             async move {
-                let disurl = format!("{}{}{}", search_url, url, path?);
+                let disurl = format!("{}{}/{}", search_url, url, path?);
                 let res = client.get(&disurl).send().await?;
                 let body = res.text().await?;
 
