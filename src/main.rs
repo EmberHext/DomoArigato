@@ -59,7 +59,7 @@ use tokio::{
 };
 use chrono::Local;
 
-async fn check_responses(url: &str, only200: bool, client: &Client) -> Vec<String> {
+async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<String> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
@@ -98,7 +98,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Vec<Strin
     let count_ok = Arc::new(Mutex::new(0));
 
     let pathlist_locked = pathlist.lock().unwrap();
-    let pathlist_cloned: Vec<String> = pathlist_locked.iter().cloned().collect();
+    let pathlist_cloned: HashSet<String> = pathlist_locked.clone();
 
     let mut futures = pathlist_cloned
         .iter()
@@ -142,7 +142,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Vec<Strin
     pathlist_cloned
 } 
 
-async fn search_bing(url: &str, paths: Vec<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("\n\nSearching the Disallow entries on bing.com...\n");
     let pathlist = paths.clone();
     let count = pathlist.len();
@@ -185,7 +185,7 @@ async fn search_bing(url: &str, paths: Vec<String>, client: &Client) -> Result<(
     Ok(())
 }
 
-async fn search_archive_org(url: &str, paths: Vec<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_archive_org(url: &str, paths: HashSet<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
     println!("\n\nSearching the Disallow entries on web.archive.org...\n");
     let pathlist = paths.clone();
     let count = pathlist.len();
