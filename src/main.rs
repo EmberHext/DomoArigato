@@ -243,12 +243,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let shared_pathlist = Arc::new(RwLock::new(pathlist));
     
         if matches.is_present("searchbing") {
+            println!("\n\nSearching the Disallow entries on Bing.com...\n");
             let pathlist = shared_pathlist.read().await.clone();
             if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::Bing).await {
                 eprintln!("Error: {}", e);
             }
         }
         if matches.is_present("searcharchive") {
+            println!("\n\nSearching the Disallow entries on web.archive.org...\n");
             let pathlist = shared_pathlist.read().await.clone();
             if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::ArchiveOrg).await {
                 eprintln!("Error: {}", e);
