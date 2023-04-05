@@ -26,15 +26,11 @@
  */
 
 
- use std::{
-    collections::HashSet,
-    error::Error,
-    sync::{Arc, RwLock},
-};
+use std::{collections::HashSet, error::Error, sync::Arc};
 use reqwest::{self, Client, StatusCode};
 use clap::{App, Arg};
 use futures::{stream, StreamExt, TryStreamExt};
-use tokio::{self, sync::RwLock as AsyncRwLock};
+use tokio::{self, sync::RwLock};
 use chrono::Local;
 
 async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<HashSet<String>, Box<dyn Error + Send + Sync>> {
@@ -58,24 +54,24 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
     };
     let lines = text.lines().collect::<Vec<_>>();
 
-    lines.iter().for_each(|line| {
+    for line in &lines {
         let line_str = line.to_string();
         let path: Vec<&str> = line_str.splitn(2, ": /").collect();
         if let Some(p) = path.get(1) {
             if line_str.starts_with("Disallow") {
                 let sanitized_path = p.trim_start_matches('/').trim_end_matches('\r').to_string();
-                let mut pathlist = pathlist.write().unwrap();
+                let mut pathlist = pathlist.write().await;
                 pathlist.insert(sanitized_path);
             }
         }
-    });
+    }
 
     let client = Arc::new(client.clone());
 
     let count = Arc::new(RwLock::new(0));
     let count_ok = Arc::new(RwLock::new(0));
 
-    let pathlist_locked = pathlist.write().unwrap();
+    let pathlist_locked = pathlist.read().await;
     let pathlist_cloned: HashSet<String> = pathlist_locked.clone();
 
     let futures = pathlist_cloned
@@ -91,13 +87,13 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
                 let status = res.status();
             
                 {
-                    let mut count = count.write().unwrap();
+                    let mut count = count.write().await;
                     *count += 1;
                 }
             
                 if status == StatusCode::OK {
                     println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
-                    let mut count_ok = count_ok.write().unwrap();
+                    let mut count_ok = count_ok.write().await;
                     *count_ok += 1;
                 } else if !only200 {
                     println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
@@ -113,8 +109,8 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
         .await?;
 
     
-    let count = *count.write().unwrap();
-    let count_ok = *count_ok.write().unwrap();
+        let count = *count.read().await;
+        let count_ok = *count_ok.read().await;
     
     if count_ok != 0 {
         println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
@@ -244,7 +240,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
     
-        let shared_pathlist = Arc::new(AsyncRwLock::new(pathlist));
+        let shared_pathlist = Arc::new(RwLock::new(pathlist));
     
         if matches.is_present("searchbing") {
             let pathlist = shared_pathlist.read().await.clone();
