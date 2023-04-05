@@ -34,7 +34,7 @@ use tokio::{self, sync::RwLock};
 use chrono::Local;
 use regex::Regex;
 
-async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<HashSet<String>, Box<dyn Error + Send + Sync>> {
+async fn check_responses(url: &str, only200: bool, client: Arc<Client>) -> Result<Arc<RwLock<HashSet<String>>>, Box<dyn Error + Send + Sync>> {
     let pathlist = Arc::new(RwLock::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
@@ -86,15 +86,12 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
         }
     }
 
-    let client = Arc::new(client.clone());
+    let client = Arc::new(client);
 
     let count = Arc::new(RwLock::new(0));
     let count_ok = Arc::new(RwLock::new(0));
 
-    let pathlist_locked = pathlist.read().await;
-    let pathlist_cloned: HashSet<String> = pathlist_locked.clone();
-
-    let futures = pathlist_cloned
+    let futures = pathlist.read().await
         .iter()
         .map(|p| {
             let disurl = format!("http://{}/{}", url, p);
@@ -138,27 +135,30 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
         println!("\n\x1b[31m !! {} links have been analyzed, none are available.\x1b[0m", count);
     }
 
-    Ok(pathlist_cloned)
+    Ok(pathlist)
 } 
 
-async fn search_engine(url: &str, paths: HashSet<String>, client: &Client, engine: SearchEngine) -> Result<(), Box<dyn Error + Send + Sync>> {
+async fn search_engine(url: &str, pathlist: Arc<RwLock<HashSet<String>>>, client: Arc<Client>, engine: SearchEngine) -> Result<(), Box<dyn Error + Send + Sync>> {
     let (search_url, no_results_text, result_check) = match engine {
         SearchEngine::Bing => ("https://www.bing.com/search?q=site:", "no results", false),
         SearchEngine::ArchiveOrg => ("https://web.archive.org/web/*/", "captures", true),
     };
 
-    let pathlist = paths.clone();
-    let count = pathlist.len();
+    let pathlist = pathlist;
+    let count = pathlist.read().await.len();
     let count_ok = Arc::new(tokio::sync::Mutex::new(0));
-    let client = client.clone();
+    let client = Arc::new(client);
 
-    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, reqwest::Error>));
+    let path_stream = {
+        let locked_pathlist = pathlist.read().await;
+        stream::iter(locked_pathlist.clone().into_iter().map(Ok::<_, reqwest::Error>))
+    };
     let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
 
     path_stream
         .map(|path| {
             let client = &client;
-            let count_ok = count_ok.clone();
+            let count_ok = Arc::clone(&count_ok);
             let url = url.to_string();
             async move {
                 let disurl = format!("{}{}/{}", search_url, url, path?);
@@ -250,9 +250,9 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
         let formatted_datetime = time_now.format("%Y-%m-%d %H:%M:%S");
         println!("Running @ {}, starting: {}\n\n", matches.value_of("url").unwrap(), formatted_datetime);
 
-        let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
-
-        let pathlist = match check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"), &client).await {
+        let client = Arc::new(Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap());
+        
+        let pathlist = match check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"), client.clone()).await {
             Ok(pathlist) => pathlist,
             Err(e) => {
                 eprintln!("Error: {}", e);
@@ -260,19 +260,15 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
             }
         };
     
-        let shared_pathlist = Arc::new(RwLock::new(pathlist));
-    
         if matches.is_present("searchbing") {
             println!("\n\nSearching the Disallow entries on Bing.com...\n");
-            let pathlist = shared_pathlist.read().await.clone();
-            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::Bing).await {
+            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist.clone(), client.clone(), SearchEngine::Bing).await {
                 eprintln!("Error: {}", e);
-            }
+            }         
         }
         if matches.is_present("searcharchive") {
             println!("\n\nSearching the Disallow entries on web.archive.org...\n");
-            let pathlist = shared_pathlist.read().await.clone();
-            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::ArchiveOrg).await {
+            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist.clone(), client.clone(), SearchEngine::ArchiveOrg).await {
                 eprintln!("Error: {}", e);
             }
         }
