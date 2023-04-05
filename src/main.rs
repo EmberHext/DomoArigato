@@ -26,40 +26,19 @@
  */
 
 
-use std::{
+ use std::{
     collections::HashSet,
-    sync::{
-        Arc,
-        Mutex
-    },
     error::Error,
+    sync::{Arc, RwLock},
 };
-use reqwest::{
-    self,
-    StatusCode,
-    Client,
-    Error as ReqwestError,
-};
-use clap::{
-    App, 
-    Arg,
-};
-use futures::{
-    stream::{
-        self, 
-        FuturesUnordered
-    }, 
-    StreamExt, 
-    TryStreamExt
-};
-use tokio::{
-    self,
-    sync::RwLock,
-};
+use reqwest::{self, Client, StatusCode};
+use clap::{App, Arg};
+use futures::{stream, StreamExt, TryStreamExt};
+use tokio::{self, sync::RwLock as AsyncRwLock};
 use chrono::Local;
 
 async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<HashSet<String>, Box<dyn Error + Send + Sync>> {
-    let pathlist = Arc::new(Mutex::new(HashSet::new()));
+    let pathlist = Arc::new(RwLock::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
     let text = match reqwest::get(&robots_txt_url).await {
@@ -85,7 +64,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
         if let Some(p) = path.get(1) {
             if line_str.starts_with("Disallow") {
                 let sanitized_path = p.trim_start_matches('/').trim_end_matches('\r').to_string();
-                let mut pathlist = pathlist.lock().unwrap();
+                let mut pathlist = pathlist.write().unwrap();
                 pathlist.insert(sanitized_path);
             }
         }
@@ -93,13 +72,13 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
 
     let client = Arc::new(client.clone());
 
-    let count = Arc::new(Mutex::new(0));
-    let count_ok = Arc::new(Mutex::new(0));
+    let count = Arc::new(RwLock::new(0));
+    let count_ok = Arc::new(RwLock::new(0));
 
-    let pathlist_locked = pathlist.lock().unwrap();
+    let pathlist_locked = pathlist.write().unwrap();
     let pathlist_cloned: HashSet<String> = pathlist_locked.clone();
 
-    let mut futures = pathlist_cloned
+    let futures = pathlist_cloned
         .iter()
         .map(|p| {
             let disurl = format!("http://{}/{}", url, p);
@@ -112,13 +91,13 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
                 let status = res.status();
             
                 {
-                    let mut count = count.lock().unwrap();
+                    let mut count = count.write().unwrap();
                     *count += 1;
                 }
             
                 if status == StatusCode::OK {
                     println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
-                    let mut count_ok = count_ok.lock().unwrap();
+                    let mut count_ok = count_ok.write().unwrap();
                     *count_ok += 1;
                 } else if !only200 {
                     println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
@@ -126,12 +105,16 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
                 Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
             }
         })
-        .collect::<FuturesUnordered<_>>();
+        .collect::<Vec<_>>();
 
-    while let Some(_) = futures.next().await {}
+    stream::iter(futures)
+        .buffer_unordered(20)
+        .try_collect::<()>()
+        .await?;
+
     
-    let count = *count.lock().unwrap();
-    let count_ok = *count_ok.lock().unwrap();
+    let count = *count.write().unwrap();
+    let count_ok = *count_ok.write().unwrap();
     
     if count_ok != 0 {
         println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
@@ -142,14 +125,18 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<Ha
     Ok(pathlist_cloned)
 } 
 
-async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
-    println!("\n\nSearching the Disallow entries on bing.com...\n");
+async fn search_engine(url: &str, paths: HashSet<String>, client: &Client, engine: SearchEngine) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let (search_url, no_results_text, result_check) = match engine {
+        SearchEngine::Bing => ("https://www.bing.com/search?q=site:", "no results", false),
+        SearchEngine::ArchiveOrg => ("https://web.archive.org/web/*/", "captures", true),
+    };
+
     let pathlist = paths.clone();
     let count = pathlist.len();
     let count_ok = Arc::new(tokio::sync::Mutex::new(0));
     let client = client.clone();
 
-    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
+    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, reqwest::Error>));
     let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
 
     path_stream
@@ -158,11 +145,12 @@ async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Resu
             let count_ok = count_ok.clone();
             let url = url.to_string();
             async move {
-                let disurl = format!("https://www.bing.com/search?q=site:{}/{}", url, path?);
+                let disurl = format!("{}{}{}", search_url, url, path?);
                 let res = client.get(&disurl).send().await?;
                 let body = res.text().await?;
 
-                if !body.contains("no results") {
+                let contains_result = body.contains(no_results_text);
+                if contains_result == result_check {
                     println!("\x1b[32m{} found\x1b[0m", disurl);
                     let mut count_ok = count_ok.lock().await;
                     *count_ok += 1;
@@ -177,7 +165,7 @@ async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Resu
     let count_ok = *count_ok.lock().await;
 
     if count_ok == 0 {
-        println!("\n\x1b[31m !! No Disallows have been indexed on bing.com\x1b[0m\n");
+        println!("\n\x1b[31m !! No Disallows have been indexed on {:?}.com\x1b[0m\n", engine);
     } else {
         println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
     }
@@ -185,47 +173,10 @@ async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Resu
     Ok(())
 }
 
-async fn search_archive_org(url: &str, paths: HashSet<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
-    println!("\n\nSearching the Disallow entries on web.archive.org...\n");
-    let pathlist = paths.clone();
-    let count = pathlist.len();
-    let count_ok = Arc::new(tokio::sync::Mutex::new(0));
-    let client = client.clone();
-
-    let path_stream = stream::iter(pathlist.into_iter().map(Ok::<_, ReqwestError>));
-    let concurrency_limit = 10; // Adjust this to control the maximum number of parallel requests
-
-    path_stream
-        .map(|path| {
-            let client = &client;
-            let count_ok = count_ok.clone();
-            let url = url.to_string();
-            async move {
-                let disurl = format!("https://web.archive.org/web/*/{}/{}", url, path?);
-                let res = client.get(&disurl).send().await?;
-                let body = res.text().await?;
-
-                if body.contains("captures") {
-                    println!("\x1b[32m{} found\x1b[0m", disurl);
-                    let mut count_ok = count_ok.lock().await;
-                    *count_ok += 1;
-                }
-                Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
-            }
-        })
-        .buffer_unordered(concurrency_limit)
-        .try_collect::<()>()
-        .await?;
-
-    let count_ok = *count_ok.lock().await;
-
-    if count_ok == 0 {
-        println!("\n\x1b[31m !! No Disallows have been archived on web.archive.org\x1b[0m\n");
-    } else {
-        println!("\n -- {} links have been analyzed and {} of them are available.", count, count_ok);
-    }
-
-    Ok(())
+#[derive(Debug)]
+enum SearchEngine {
+    Bing,
+    ArchiveOrg,
 }
 
 #[tokio::main]
@@ -292,26 +243,18 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
                 return Ok(());
             }
         };
-
-        let shared_pathlist = Arc::new(RwLock::new(pathlist));
+    
+        let shared_pathlist = Arc::new(AsyncRwLock::new(pathlist));
     
         if matches.is_present("searchbing") {
-            let pathlist = {
-                let pathlist = shared_pathlist.clone();
-                let pathlist = pathlist.read().await;
-                pathlist.clone()
-            };
-            if let Err(e) = search_bing(matches.value_of("url").unwrap(), pathlist, &client).await {
+            let pathlist = shared_pathlist.read().await.clone();
+            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::Bing).await {
                 eprintln!("Error: {}", e);
             }
         }
         if matches.is_present("searcharchive") {
-            let pathlist = {
-                let pathlist = shared_pathlist.clone();
-                let pathlist = pathlist.read().await;
-                pathlist.clone()
-            };
-            if let Err(e) = search_archive_org(matches.value_of("url").unwrap(), pathlist, &client).await {
+            let pathlist = shared_pathlist.read().await.clone();
+            if let Err(e) = search_engine(matches.value_of("url").unwrap(), pathlist, &client, SearchEngine::ArchiveOrg).await {
                 eprintln!("Error: {}", e);
             }
         }
