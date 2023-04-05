@@ -28,7 +28,6 @@
 
 use std::{
     collections::HashSet,
-    process,
     sync::{
         Arc,
         Mutex
@@ -59,7 +58,7 @@ use tokio::{
 };
 use chrono::Local;
 
-async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<String> {
+async fn check_responses(url: &str, only200: bool, client: &Client) -> Result<HashSet<String>, Box<dyn Error + Send + Sync>> {
     let pathlist = Arc::new(Mutex::new(HashSet::new()));
     let robots_txt_url = format!("http://{}/robots.txt", url);
 
@@ -75,7 +74,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<S
                     eprintln!("\x1b[31me.g: domo -u www.example.com -o -sb\x1b[0m\n");
                 }
             }
-            process::exit(1);
+            return Err(Box::new(error));
         }
     };
     let lines = text.lines().collect::<Vec<_>>();
@@ -109,14 +108,14 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<S
             let count_ok = Arc::clone(&count_ok);
 
             async move {
-                let res = client.get(&disurl).send().await.unwrap();
+                let res = client.get(&disurl).send().await?;
                 let status = res.status();
-
+            
                 {
                     let mut count = count.lock().unwrap();
                     *count += 1;
                 }
-
+            
                 if status == StatusCode::OK {
                     println!("\x1b[32m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
                     let mut count_ok = count_ok.lock().unwrap();
@@ -124,6 +123,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<S
                 } else if !only200 {
                     println!("\x1b[31m{} {} {:?}\x1b[0m", disurl, status.as_u16(), status.canonical_reason().expect("Something went wrong fetching the http response"));
                 }
+                Ok(()) as Result<(), Box<dyn Error + Send + Sync>>
             }
         })
         .collect::<FuturesUnordered<_>>();
@@ -139,7 +139,7 @@ async fn check_responses(url: &str, only200: bool, client: &Client) -> HashSet<S
         println!("\n\x1b[31m !! {} links have been analyzed, none are available.\x1b[0m", count);
     }
 
-    pathlist_cloned
+    Ok(pathlist_cloned)
 } 
 
 async fn search_bing(url: &str, paths: HashSet<String>, client: &Client) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -285,7 +285,14 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
 
         let client = Client::builder().redirect(reqwest::redirect::Policy::none()).build().unwrap();
 
-        let pathlist = check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"), &client).await;
+        let pathlist = match check_responses(matches.value_of("url").unwrap(), matches.is_present("only200"), &client).await {
+            Ok(pathlist) => pathlist,
+            Err(e) => {
+                eprintln!("Error: {}", e);
+                return Ok(());
+            }
+        };
+
         let shared_pathlist = Arc::new(RwLock::new(pathlist));
     
         if matches.is_present("searchbing") {
