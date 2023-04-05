@@ -55,22 +55,22 @@ https://www.bing.com/search?q=site:targetsite.com/icons/ found
 
 Searching the Disallow entries on web.archive.org...
 
-https://web.archive.org/targetsite.com/%7Echris/omc/ found
-https://web.archive.org/targetsite.com/counter.html found
-https://web.archive.org/targetsite.com/~chris/directions.html found
-https://web.archive.org/targetsite.com/~chris/omc/ found
-https://web.archive.org/targetsite.com/~chris/weird/ found
-https://web.archive.org/targetsite.com/stats/ found
-https://web.archive.org/targetsite.com/webnews/ found
-https://web.archive.org/targetsite.com/%7Echris/weird/ found
-https://web.archive.org/targetsite.com/files/ found
-https://web.archive.org/targetsite.com/staff/ found
-https://web.archive.org/targetsite.com/%7Echris/directions.html found
-https://web.archive.org/targetsite.com/primer/ found
-https://web.archive.org/targetsite.com/HTML_Dictionary/ found
-https://web.archive.org/targetsite.com/cgi-bin/ found
-https://web.archive.org/targetsite.com/Unixhelp/ found
-https://web.archive.org/targetsite.com/icons/ found
+https://web.archive.org/web/*/targetsite.com/%7Echris/omc/ found
+https://web.archive.org/web/*/targetsite.com/counter.html found
+https://web.archive.org/web/*/targetsite.com/~chris/directions.html found
+https://web.archive.org/web/*/targetsite.com/~chris/omc/ found
+https://web.archive.org/web/*/targetsite.com/~chris/weird/ found
+https://web.archive.org/web/*/targetsite.com/stats/ found
+https://web.archive.org/web/*/targetsite.com/webnews/ found
+https://web.archive.org/web/*/targetsite.com/%7Echris/weird/ found
+https://web.archive.org/web/*/targetsite.com/files/ found
+https://web.archive.org/web/*/targetsite.com/staff/ found
+https://web.archive.org/web/*/targetsite.com/%7Echris/directions.html found
+https://web.archive.org/web/*/targetsite.com/primer/ found
+https://web.archive.org/web/*/targetsite.com/HTML_Dictionary/ found
+https://web.archive.org/web/*/targetsite.com/cgi-bin/ found
+https://web.archive.org/web/*/targetsite.com/Unixhelp/ found
+https://web.archive.org/web/*/targetsite.com/icons/ found
 
  -- 16 links have been analyzed and 16 of them are available.
 Finished in 3.54s
